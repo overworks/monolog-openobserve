@@ -16,7 +16,7 @@ class OpenObserveHandler extends AbstractProcessingHandler
      * 
      * @param string $host The OpenObserve host URL.
      * @param string $organizationId The organization ID.
-     * @param string $stream The stream name.
+     * @param string $streamName The stream name.
      * @param string $username The username for authentication.
      * @param string $password The password for authentication.
      * @param bool $ignoreFailure Whether to ignore failures when sending logs.
@@ -26,7 +26,7 @@ class OpenObserveHandler extends AbstractProcessingHandler
     public function __construct(
         protected string $host,
         protected string $organizationId,
-        protected string $stream,
+        protected string $streamName,
         protected string $username,
         protected string $password,
         protected bool $ignoreFailure = false,
@@ -34,24 +34,6 @@ class OpenObserveHandler extends AbstractProcessingHandler
         bool $bubble = true
     ) {
         parent::__construct($level, $bubble);
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function handle(LogRecord $record): bool
-    {
-        if (!$this->isHandling($record)) {
-            return false;
-        }
-
-        $record = $this->processRecord($record);
-
-        $record->formatted = $this->getFormatter()->formatBatch([$record]);
-
-        $this->write($record);
-
-        return false === $this->bubble;
     }
 
     /**
@@ -105,7 +87,7 @@ class OpenObserveHandler extends AbstractProcessingHandler
     {
         try {
             $client = new Client(['base_uri' => rtrim($this->host, '/')]);
-            $client->post("/api/{$this->organizationId}/{$this->stream}/_json", [
+            $client->post("/api/{$this->organizationId}/{$this->streamName}/_json", [
                 RequestOptions::AUTH => [$this->username, $this->password],
                 RequestOptions::HEADERS => [
                     'Content-Type' => 'application/json',

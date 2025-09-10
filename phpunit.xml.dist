@@ -19,7 +19,7 @@
     <php>
         <env name="O2_HOST" value="http://localhost:5080"/>
         <env name="O2_ORGANIZATION_ID" value="default"/>
-        <env name="O2_STREAM" value="default"/>
+        <env name="O2_STREAM_NAME" value="default"/>
         <env name="O2_USERNAME" value=""/>
         <env name="O2_PASSWORD" value=""/>
     </php>

@@ -48,20 +48,14 @@ class OpenObserveTest extends TestCase
     {
         $host = $_ENV['O2_HOST'];
         $organizationId = $_ENV['O2_ORGANIZATION_ID'];
-        $stream = $_ENV['O2_STREAM'];
+        $streamName = $_ENV['O2_STREAM_NAME'];
         $username = $_ENV['O2_USERNAME'];
         $password = $_ENV['O2_PASSWORD'];
-        if (empty($host) || empty($organizationId) || empty($stream) || empty($username) || empty($password)) {
+        if (empty($host) || empty($organizationId) || empty($streamName) || empty($username) || empty($password)) {
             $this->markTestSkipped('OpenObserve environment variables are not set.');
         }
 
-        $handler = new OpenObserveHandler(
-            host: $host,
-            organizationId: $organizationId,
-            stream: $stream,
-            username: $username,
-            password: $password,
-        );
+        $handler = new OpenObserveHandler($host, $organizationId, $streamName, $username, $password);
 
         $message = $this->faker()->sentence();
 
