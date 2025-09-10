@@ -1,0 +1,44 @@
+{
+    "name": "minhyung/monolog-openobserve",
+    "description": "Monolog handler for OpenObserve",
+    "type": "library",
+    "keywords": ["monolog", "openobserve", "handler", "logging"],
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Minhyung Park",
+            "email": "urlinee@gmail.com"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/overworks/monolog-openobserve/issues",
+        "source": "https://github.com/overworks/monolog-openobserve"
+    },
+    "require": {
+        "guzzlehttp/guzzle": "^7.0",
+        "monolog/monolog": "^3.0"
+    },
+    "require-dev": {
+        "fakerphp/faker": "^1.24",
+        "phpunit/phpunit": "^12.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Minhyung\\Monolog\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Minhyung\\Monolog\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    },
+    "scripts": {
+        "test": "phpunit"
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
