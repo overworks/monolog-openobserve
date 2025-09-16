@@ -2,16 +2,34 @@
 
 namespace Minhyung\Monolog;
 
-use Monolog\Formatter\JsonFormatter;
+use Monolog\Formatter\NormalizerFormatter;
 use Monolog\LogRecord;
 
-class OpenObserveFormatter extends JsonFormatter
+class OpenObserveFormatter extends NormalizerFormatter
 {
-    public function __construct(int $batchMode = self::BATCH_MODE_JSON, bool $appendNewline = true, bool $ignoreEmptyContextAndExtra = true, bool $includeStacktraces = true)
+    /**
+     * @inheritDoc
+     */
+    public function format(LogRecord $record): string
     {
-        parent::__construct($batchMode, $appendNewline, $ignoreEmptyContextAndExtra, $includeStacktraces);
+        $normalized = $this->normalizeRecord($record);
+
+        return $this->toJson($normalized, true);
     }
 
+    /**
+     * @inheritDoc
+     */
+    public function formatBatch(array $records): string
+    {
+        $formatted = array_map(fn (LogRecord $record) => $this->normalizeRecord($record), $records);
+
+        return $this->toJson($formatted, true);
+    }
+
+    /**
+     * @inheritDoc
+     */
     protected function normalizeRecord(LogRecord $record): array
     {
         $normalized = parent::normalizeRecord($record);
