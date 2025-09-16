@@ -2,12 +2,11 @@
 
 namespace Minhyung\Monolog;
 
-use GuzzleHttp\Client;
-use GuzzleHttp\RequestOptions;
 use Monolog\Formatter\FormatterInterface;
 use Monolog\Handler\AbstractProcessingHandler;
 use Monolog\Level;
 use Monolog\LogRecord;
+use RuntimeException;
 
 class OpenObserveHandler extends AbstractProcessingHandler
 {
@@ -85,19 +84,22 @@ class OpenObserveHandler extends AbstractProcessingHandler
      */
     protected function send(string $payload): void
     {
-        try {
-            $client = new Client(['base_uri' => rtrim($this->host, '/')]);
-            $client->post("/api/{$this->organizationId}/{$this->streamName}/_json", [
-                RequestOptions::AUTH => [$this->username, $this->password],
-                RequestOptions::HEADERS => [
-                    'Content-Type' => 'application/json',
+        $url = rtrim($this->host, '/') . "/api/{$this->organizationId}/{$this->streamName}/_json";
+        $options = [
+            'http' => [
+                'method' => 'POST',
+                'header' => [
+                    'Content-Type: application/json',
+                    'Authorization: Basic ' . base64_encode("{$this->username}:{$this->password}"),
                 ],
-                RequestOptions::BODY => $payload,
-            ]);
-        } catch (\Throwable $e) {
-            if (! $this->ignoreFailure) {
-                throw $e;
-            }
+                'content' => $payload,
+                'ignore_errors' => true,
+            ],
+        ];
+        $resource = stream_context_create($options);
+        
+        if (file_get_contents($url, false, $resource) === false && ! $this->ignoreFailure) {
+            throw new RuntimeException("Failed to send log to OpenObserve at {$url}");
         }
     }
 }
