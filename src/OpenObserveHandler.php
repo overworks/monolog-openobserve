@@ -97,9 +97,25 @@ class OpenObserveHandler extends AbstractProcessingHandler
             ],
         ];
         $resource = stream_context_create($options);
-        
-        if (file_get_contents($url, false, $resource) === false && ! $this->ignoreFailure) {
-            throw new RuntimeException("Failed to send log to OpenObserve at {$url}");
+        $result = file_get_contents($url, false, $resource);
+
+        $success = false;
+        if (isset($http_response_header[0])) {
+            if (preg_match('{HTTP/\d\.\d\s(2\d{2})}', $http_response_header[0], $match)) {
+                $success = true;
+            }
+        }
+
+        if ($result === false || !$success) {
+            if (!$this->ignoreFailure) {
+                $errorMessage = "Failed to send log to OpenObserve at {$url}";
+                if ($result !== false) {
+                    $errorMessage .= " - Response: " . $result;
+                } elseif (isset($http_response_header[0])) {
+                    $errorMessage .= " - Status: " . $http_response_header[0];
+                }
+                throw new RuntimeException($errorMessage);
+            }
         }
     }
 }
