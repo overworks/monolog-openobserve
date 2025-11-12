@@ -4,6 +4,8 @@ namespace Minhyung\Monolog;
 
 use Monolog\Formatter\FormatterInterface;
 use Monolog\Handler\AbstractProcessingHandler;
+use Monolog\Handler\Curl\Util as CurlUtil;
+use Monolog\Handler\MissingExtensionException;
 use Monolog\Level;
 use Monolog\LogRecord;
 use RuntimeException;
@@ -32,6 +34,10 @@ class OpenObserveHandler extends AbstractProcessingHandler
         int|string|Level $level = Level::Debug,
         bool $bubble = true
     ) {
+        if (!\extension_loaded('curl')) {
+            throw new MissingExtensionException('The curl extension is needed to use the OpenObserveHandler');
+        }
+
         parent::__construct($level, $bubble);
     }
 
@@ -85,20 +91,19 @@ class OpenObserveHandler extends AbstractProcessingHandler
     protected function send(string $payload): void
     {
         $url = rtrim($this->host, '/') . "/api/{$this->organizationId}/{$this->streamName}/_json";
-        $options = [
-            'http' => [
-                'method' => 'POST',
-                'header' => [
-                    'Content-Type: application/json',
-                    'Authorization: Basic ' . base64_encode("{$this->username}:{$this->password}"),
-                ],
-                'content' => $payload,
-                'ignore_errors' => true,
-            ],
-        ];
-        $resource = stream_context_create($options);
-        
-        if (file_get_contents($url, false, $resource) === false && ! $this->ignoreFailure) {
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Content-Type: application/json',
+            'Authorization: Basic ' . base64_encode("{$this->username}:{$this->password}"),
+        ]);
+
+        $result = CurlUtil::execute($ch);
+        if ($result === false && ! $this->ignoreFailure) {
             throw new RuntimeException("Failed to send log to OpenObserve at {$url}");
         }
     }

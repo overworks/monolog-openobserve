@@ -15,6 +15,7 @@
         "source": "https://github.com/overworks/monolog-openobserve"
     },
     "require": {
+        "ext-curl": "*",
         "monolog/monolog": "^3.0"
     },
     "require-dev": {
