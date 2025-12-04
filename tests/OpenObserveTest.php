@@ -67,4 +67,32 @@ class OpenObserveTest extends TestCase
         // Instead, we can only ensure that no exceptions were thrown during logging.
         $this->assertTrue(true);
     }
+
+    public function testIgnoreFailure(): void
+    {
+        $host = $_ENV['O2_HOST'];
+        $organizationId = $_ENV['O2_ORGANIZATION_ID'];
+        $streamName = $_ENV['O2_STREAM_NAME'];
+        $username = $_ENV['O2_USERNAME'];
+        $password = $_ENV['O2_PASSWORD'];
+        if (empty($host) || empty($organizationId) || empty($streamName) || empty($username) || empty($password)) {
+            $this->markTestSkipped('OpenObserve environment variables are not set.');
+        }
+        
+        $log = new Logger('test');
+        $message = $this->faker()->sentence();
+
+        $handler = new OpenObserveHandler('http://invalid-host', 'invalid-org', 'invalid-stream', 'user', 'pass', true);
+        
+        $log->pushHandler($handler);
+        $log->info($message, ['foo' => 'bar']);
+
+        $log->popHandler();
+
+        $handler = new OpenObserveHandler('http://invalid-host', 'invalid-org', 'invalid-stream', 'user', 'pass', false);
+        $log->pushHandler($handler);
+
+        $this->expectException(\Exception::class);
+        $log->info($message, ['foo' => 'bar']);
+    }
 }
