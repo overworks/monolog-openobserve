@@ -1,5 +1,11 @@
 # monolog-openobserve
 
+[![CI](https://github.com/overworks/monolog-openobserve/actions/workflows/php.yml/badge.svg?branch=0.x)](https://github.com/overworks/monolog-openobserve/actions/workflows/php.yml)
+[![Latest Version](https://img.shields.io/packagist/v/minhyung/monolog-openobserve.svg)](https://packagist.org/packages/minhyung/monolog-openobserve)
+[![PHP Version](https://img.shields.io/packagist/php-v/minhyung/monolog-openobserve.svg)](https://packagist.org/packages/minhyung/monolog-openobserve)
+[![Total Downloads](https://img.shields.io/packagist/dt/minhyung/monolog-openobserve.svg)](https://packagist.org/packages/minhyung/monolog-openobserve)
+[![License](https://img.shields.io/packagist/l/minhyung/monolog-openobserve.svg)](LICENSE)
+
 Monolog handler for [OpenObserve](https://openobserve.ai/)
 
 ## Requirements

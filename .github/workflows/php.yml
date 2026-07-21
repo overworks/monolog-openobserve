@@ -21,7 +21,7 @@ jobs:
         php: [ '8.3', '8.4' ]
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
     - name: Setup PHP
       uses: shivammathur/setup-php@v2
@@ -43,7 +43,7 @@ jobs:
     # Composer download cache keyed on composer.json instead of vendor/, since
     # vendor/ contents depend on which versions the resolver picked.
     - name: Cache Composer downloads
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: ${{ steps.composer-cache.outputs.dir }}
         key: ${{ runner.os }}-composer-${{ matrix.php }}-${{ hashFiles('composer.json') }}
