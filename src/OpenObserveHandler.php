@@ -8,6 +8,7 @@ use Monolog\Handler\Curl\Util as CurlUtil;
 use Monolog\Handler\MissingExtensionException;
 use Monolog\Level;
 use Monolog\LogRecord;
+use Psr\Log\LoggerInterface;
 
 class OpenObserveHandler extends AbstractProcessingHandler
 {
@@ -22,6 +23,9 @@ class OpenObserveHandler extends AbstractProcessingHandler
      * @param bool $ignoreFailure Whether to ignore failures when sending logs.
      * @param int|string|Level $level The minimum logging level at which this handler will be triggered.
      * @param bool $bubble Whether the messages that are handled can bubble up the stack or not.
+     * @param LoggerInterface|null $fallbackLogger Where to report failures that $ignoreFailure swallows.
+     *                                             Must not be a logger that writes back to this handler,
+     *                                             as that would recurse. Defaults to reporting nowhere.
      */
     public function __construct(
         protected string $host,
@@ -31,7 +35,8 @@ class OpenObserveHandler extends AbstractProcessingHandler
         protected string $password,
         protected bool $ignoreFailure = false,
         int|string|Level $level = Level::Debug,
-        bool $bubble = true
+        bool $bubble = true,
+        protected ?LoggerInterface $fallbackLogger = null
     ) {
         if (!\extension_loaded('curl')) {
             throw new MissingExtensionException('The curl extension is needed to use the OpenObserveHandler');
@@ -85,7 +90,7 @@ class OpenObserveHandler extends AbstractProcessingHandler
      * 
      * @param string $payload The JSON payload to send.
      * @return void
-     * @throws \Throwable If the request fails and ignoreFailure is false.
+     * @throws \RuntimeException If the request fails or is rejected and ignoreFailure is false.
      */
     protected function send(string $payload): void
     {
@@ -106,10 +111,24 @@ class OpenObserveHandler extends AbstractProcessingHandler
             if ($result === false) {
                 throw new \RuntimeException("Failed to send log to OpenObserve at {$url}");
             }
+
+            // curl only reports transport-level failures, so a 401/403/404 arrives
+            // here as a perfectly successful request. Check the status explicitly.
+            $status = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+            if ($status < 200 || $status >= 300) {
+                throw new \RuntimeException("OpenObserve returned HTTP {$status} for {$url}: {$result}");
+            }
         } catch (\Exception $e) {
             if (! $this->ignoreFailure) {
                 throw $e;
             }
+
+            // The failure is being swallowed on purpose, but a caller that wants
+            // to know about it can supply somewhere to report it.
+            $this->fallbackLogger?->error(
+                'Failed to send log to OpenObserve: ' . $e->getMessage(),
+                ['exception' => $e]
+            );
         }
     }
 }
