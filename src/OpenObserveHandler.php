@@ -26,6 +26,9 @@ class OpenObserveHandler extends AbstractProcessingHandler
      * @param LoggerInterface|null $fallbackLogger Where to report failures that $ignoreFailure swallows.
      *                                             Must not be a logger that writes back to this handler,
      *                                             as that would recurse. Defaults to reporting nowhere.
+     * @param float $connectTimeout Seconds to wait for the connection to OpenObserve before giving up.
+     * @param float $timeout Seconds to allow for the whole request before giving up. Keeps a stalled
+     *                       OpenObserve from blocking the application indefinitely. 0 disables the limit.
      */
     public function __construct(
         protected string $host,
@@ -36,7 +39,9 @@ class OpenObserveHandler extends AbstractProcessingHandler
         protected bool $ignoreFailure = false,
         int|string|Level $level = Level::Debug,
         bool $bubble = true,
-        protected ?LoggerInterface $fallbackLogger = null
+        protected ?LoggerInterface $fallbackLogger = null,
+        protected float $connectTimeout = 2.0,
+        protected float $timeout = 5.0
     ) {
         if (!\extension_loaded('curl')) {
             throw new MissingExtensionException('The curl extension is needed to use the OpenObserveHandler');
@@ -106,6 +111,10 @@ class OpenObserveHandler extends AbstractProcessingHandler
                 'Content-Type: application/json',
                 'Authorization: Basic ' . base64_encode("{$this->username}:{$this->password}"),
             ]);
+            // The whole-second CURLOPT_TIMEOUT / CURLOPT_CONNECTTIMEOUT would floor
+            // a fractional value, so use the millisecond variants to honour it.
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT_MS, (int) round($this->connectTimeout * 1000));
+            curl_setopt($ch, CURLOPT_TIMEOUT_MS, (int) round($this->timeout * 1000));
 
             $result = CurlUtil::execute($ch);
             if ($result === false) {

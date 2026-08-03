@@ -79,3 +79,22 @@ $handler = new OpenObserveHandler(
 The fallback logger must not write back to this handler, as that would recurse.
 It is only consulted while `ignoreFailure` is on; when the handler rethrows, the
 caller already sees the exception.
+
+## Timeouts
+
+Because a stalled or unreachable OpenObserve would otherwise block the
+application on every log call, the request is bounded by two timeouts: 2 seconds
+to connect and 5 seconds for the whole request. Adjust them — or set the request
+timeout to `0` to disable it — via the `connectTimeout` and `timeout` arguments:
+
+```php
+$handler = new OpenObserveHandler(
+	host: 'http://localhost:5080',
+	organizationId: 'default',
+	streamName: 'monolog',
+	username: 'admin@yourdomain.com',
+	password: 'yourpassword',
+	connectTimeout: 2.0,
+	timeout: 5.0,
+);
+```
