@@ -37,7 +37,7 @@ class OpenObserveTest extends TestCase
         $this->assertArrayHasKey('formatted', $record);
         $formatted = json_decode($record['formatted'], true);
         $this->assertArrayHasKey('_timestamp', $formatted);
-        $this->assertEquals($record['datetime']->getTimestamp(), $formatted['_timestamp']);
+        $this->assertEquals((int) $record['datetime']->format('Uu'), $formatted['_timestamp']);
         $this->assertArrayHasKey('message', $formatted);
         $this->assertEquals($message, $formatted['message']);
         $this->assertArrayHasKey('context', $formatted);

@@ -34,7 +34,10 @@ class OpenObserveFormatter extends NormalizerFormatter
     {
         $normalized = parent::normalizeRecord($record);
 
-        $normalized['_timestamp'] = $record->datetime->getTimestamp();
+        // OpenObserve reads a numeric _timestamp as microseconds since the epoch,
+        // so seconds would land every log in 1970. 'Uu' gives seconds plus the
+        // six-digit microsecond part, which is exactly that value.
+        $normalized['_timestamp'] = (int) $record->datetime->format('Uu');
 
         return $normalized;
     }
