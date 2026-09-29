@@ -43,7 +43,8 @@ $logger->info('Hello OpenObserve!', ['foo' => 'bar']);
 ## Handling failures
 
 By default the handler throws when OpenObserve cannot be reached or rejects the
-request, including on an authentication failure such as `401`. Set
+request, including on an authentication failure such as `401` or when an HTTP
+success response reports rejected records in `status[].failed`. Set
 `ignoreFailure: true` to swallow those errors so that a logging problem never
 breaks the application:
 
@@ -98,3 +99,7 @@ $handler = new OpenObserveHandler(
 	timeout: 5.0,
 );
 ```
+
+Each log or batch is sent once, without automatic retries, so retries do not
+multiply the configured timeout. A timeout does not guarantee that the server
+has not already ingested the records; retrying may create duplicates.

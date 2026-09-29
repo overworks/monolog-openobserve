@@ -24,7 +24,8 @@ class OpenObserveFormatter extends NormalizerFormatter
     {
         $formatted = array_map(fn (LogRecord $record) => $this->normalizeRecord($record), $records);
 
-        return $this->toJson($formatted, true);
+        // Filtering a batch can leave gaps in its keys; JSON must remain a list.
+        return $this->toJson(array_values($formatted), true);
     }
 
     /**

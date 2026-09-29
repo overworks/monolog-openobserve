@@ -116,7 +116,9 @@ class OpenObserveHandler extends AbstractProcessingHandler
             curl_setopt($ch, CURLOPT_CONNECTTIMEOUT_MS, (int) round($this->connectTimeout * 1000));
             curl_setopt($ch, CURLOPT_TIMEOUT_MS, (int) round($this->timeout * 1000));
 
-            $result = CurlUtil::execute($ch);
+            // A single attempt keeps the timeout bound to this log call. Retrying
+            // a timed-out POST can also duplicate records already ingested.
+            $result = CurlUtil::execute($ch, 1);
             if ($result === false) {
                 throw new \RuntimeException("Failed to send log to OpenObserve at {$url}");
             }
@@ -126,6 +128,14 @@ class OpenObserveHandler extends AbstractProcessingHandler
             $status = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
             if ($status < 200 || $status >= 300) {
                 throw new \RuntimeException("OpenObserve returned HTTP {$status} for {$url}: {$result}");
+            }
+
+            // A successful HTTP response can still report rejected records.
+            $response = json_decode($result, true);
+            foreach ($response['status'] ?? [] as $streamStatus) {
+                if (($streamStatus['failed'] ?? 0) > 0) {
+                    throw new \RuntimeException("OpenObserve failed to ingest records at {$url}: {$result}");
+                }
             }
         } catch (\Exception $e) {
             if (! $this->ignoreFailure) {

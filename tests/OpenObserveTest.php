@@ -7,6 +7,8 @@ use Minhyung\Monolog\OpenObserveHandler;
 use Monolog\Handler\TestHandler;
 use Monolog\Level;
 use Monolog\Logger;
+use Monolog\LogRecord;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 class OpenObserveTest extends TestCase
@@ -118,6 +120,65 @@ class OpenObserveTest extends TestCase
         $this->assertEquals($message, $formatted['message']);
         $this->assertArrayHasKey('context', $formatted);
         $this->assertEquals('bar', $formatted['context']['foo']);
+    }
+
+    public function testSparseBatchFormatterProducesJsonArray(): void
+    {
+        $record = new LogRecord(new \DateTimeImmutable(), 'test', Level::Error, 'error');
+        $formatted = (new OpenObserveFormatter())->formatBatch([2 => $record, 4 => $record]);
+        $decoded = json_decode($formatted, false, 512, JSON_THROW_ON_ERROR);
+
+        $this->assertIsArray($decoded);
+        $this->assertCount(2, $decoded);
+        $this->assertSame('error', $decoded[0]->message);
+    }
+
+    public function testFilteredBatchSendsJsonArray(): void
+    {
+        $handler = new OpenObserveHandler(
+            self::$serverHost, 'batch', 'stream', 'user', 'pass', level: Level::Error
+        );
+        $handler->handleBatch([
+            new LogRecord(new \DateTimeImmutable(), 'test', Level::Debug, 'skip'),
+            new LogRecord(new \DateTimeImmutable(), 'test', Level::Error, 'first error'),
+            new LogRecord(new \DateTimeImmutable(), 'test', Level::Info, 'skip too'),
+            new LogRecord(new \DateTimeImmutable(), 'test', Level::Error, 'second error'),
+        ]);
+
+        // The stub rejects anything other than an array of the two error records.
+        $this->assertTrue(true);
+    }
+
+    public static function ingestionFailures(): array
+    {
+        return [['partial'], ['rejected']];
+    }
+
+    #[DataProvider('ingestionFailures')]
+    public function testIngestionFailureThrowsDespiteHttpSuccess(string $scenario): void
+    {
+        $handler = new OpenObserveHandler(self::$serverHost, $scenario, 'stream', 'user', 'pass');
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('failed to ingest');
+
+        (new Logger('test', [$handler]))->error('rejected record');
+    }
+
+    public function testIgnoredIngestionFailureIsReportedToFallback(): void
+    {
+        $fallback = new TestHandler();
+        $handler = new OpenObserveHandler(
+            self::$serverHost, 'partial', 'stream', 'user', 'pass',
+            ignoreFailure: true,
+            fallbackLogger: new Logger('fallback', [$fallback])
+        );
+        (new Logger('test', [$handler]))->error('rejected record');
+
+        $records = $fallback->getRecords();
+        $this->assertCount(1, $records);
+        $this->assertSame(Level::Error, $records[0]->level);
+        $this->assertStringContainsString('failed to ingest', $records[0]->message);
+        $this->assertInstanceOf(\RuntimeException::class, $records[0]->context['exception']);
     }
 
     public function testSuccessfulResponseDoesNotThrow(): void
@@ -272,5 +333,20 @@ class OpenObserveTest extends TestCase
 
         $this->expectException(\Exception::class);
         $log->info($message, ['foo' => 'bar']);
+    }
+    public function testTimeoutDoesNotRetryTheRequest(): void
+    {
+        $handler = new OpenObserveHandler(
+            self::$serverHost, 'slow', 'stream', 'user', 'pass', timeout: 0.5
+        );
+        $started = hrtime(true);
+        try {
+            (new Logger('test', [$handler]))->error('timeout');
+            $this->fail('Expected a transport timeout.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('code 28', $e->getMessage());
+            // Allow scheduling overhead, but reject the former five attempts (2.5s).
+            $this->assertLessThan(2.0, (hrtime(true) - $started) / 1e9);
+        }
     }
 }
