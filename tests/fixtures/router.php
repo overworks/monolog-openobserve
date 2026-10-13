@@ -11,6 +11,14 @@ $segments = explode('/', trim((string) $path, '/'));
 $status = isset($segments[1]) && ctype_digit($segments[1]) ? (int) $segments[1] : 200;
 
 $scenario = $segments[1] ?? '';
+if ($scenario === 'auth') {
+    $expectedToken = $segments[2] === 'credentials'
+        ? base64_encode('user:p:a:ss')
+        : 'opaque-token+/=';
+    if (($_SERVER['HTTP_AUTHORIZATION'] ?? '') !== 'Basic ' . $expectedToken) {
+        $status = 401;
+    }
+}
 $payload = json_decode(file_get_contents('php://input'));
 if ($scenario === 'batch' && (!is_array($payload)
     || array_column($payload, 'message') !== ['first error', 'second error'])) {

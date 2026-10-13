@@ -30,8 +30,7 @@ $handler = new OpenObserveHandler(
 	host: 'http://localhost:5080',
 	organizationId: 'default',
 	streamName: 'monolog',
-	username: 'admin@yourdomain.com',
-	password: 'yourpassword',
+	token: 'your-ingest-token',
 );
 
 $logger = new Logger('app');
@@ -39,6 +38,50 @@ $logger->pushHandler($handler);
 
 $logger->info('Hello OpenObserve!', ['foo' => 'bar']);
 ```
+
+The token is the value after `Basic ` in OpenObserve's ingestion Authorization
+header. Pass it without that prefix. The handler sends it unchanged, without
+base64-encoding it again.
+
+### Builder and username/password authentication
+
+Use the builder to authenticate with a username and password:
+
+```php
+$handler = OpenObserveHandler::builder('http://localhost:5080', 'default', 'monolog')
+    ->withCredentials('admin@yourdomain.com', 'yourpassword')
+    ->withLevel(\Monolog\Level::Info)
+    ->withTimeout(5.0)
+    ->build();
+```
+
+Tokens are also supported by the builder:
+
+```php
+$handler = OpenObserveHandler::builder('http://localhost:5080', 'default', 'monolog')
+    ->withToken('your-ingest-token')
+    ->withIgnoreFailure(true)
+    ->build();
+```
+
+The builder is mutable: each `with...()` call returns the same builder, and the
+last `withToken()` or `withCredentials()` call determines authentication.
+Each `build()` creates an independent handler. Authentication must be configured
+before building, otherwise `build()` throws `LogicException`. Empty tokens and
+tokens containing CR or LF cause `InvalidArgumentException` at construction or
+build time.
+
+All constructor options have matching builder methods: `withIgnoreFailure()`,
+`withLevel()`, `withBubble()`, `withFallbackLogger()`, `withConnectTimeout()`, and
+`withTimeout()`. Defaults are identical to the constructor: failures throw,
+level is Debug, bubbling is enabled, there is no fallback logger, and connection
+and request timeouts are 2 and 5 seconds.
+
+**Migration:** The constructor's former `username` and `password` arguments have
+been replaced by a single `token` argument. Replace existing credentials-based
+constructor calls with `OpenObserveHandler::builder($host, $organizationId,
+$streamName)->withCredentials($username, $password)->build()`, transferring
+optional arguments to their matching builder methods.
 
 ## Handling failures
 
@@ -53,8 +96,7 @@ $handler = new OpenObserveHandler(
 	host: 'http://localhost:5080',
 	organizationId: 'default',
 	streamName: 'monolog',
-	username: 'admin@yourdomain.com',
-	password: 'yourpassword',
+	token: 'your-ingest-token',
 	ignoreFailure: true,
 );
 ```
@@ -70,8 +112,7 @@ $handler = new OpenObserveHandler(
 	host: 'http://localhost:5080',
 	organizationId: 'default',
 	streamName: 'monolog',
-	username: 'admin@yourdomain.com',
-	password: 'yourpassword',
+	token: 'your-ingest-token',
 	ignoreFailure: true,
 	fallbackLogger: new Logger('openobserve', [new ErrorLogHandler()]),
 );
@@ -93,8 +134,7 @@ $handler = new OpenObserveHandler(
 	host: 'http://localhost:5080',
 	organizationId: 'default',
 	streamName: 'monolog',
-	username: 'admin@yourdomain.com',
-	password: 'yourpassword',
+	token: 'your-ingest-token',
 	connectTimeout: 2.0,
 	timeout: 5.0,
 );

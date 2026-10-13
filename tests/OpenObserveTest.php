@@ -89,8 +89,7 @@ class OpenObserveTest extends TestCase
             self::$serverHost,
             (string) $status,
             'stream',
-            'user',
-            'pass',
+            'dXNlcjpwYXNz',
             $ignoreFailure
         );
     }
@@ -122,6 +121,120 @@ class OpenObserveTest extends TestCase
         $this->assertEquals('bar', $formatted['context']['foo']);
     }
 
+    public static function authenticationCases(): array
+    {
+        $cases = [];
+        foreach (['constructor', 'token', 'credentials', 'token-last', 'credentials-last'] as $mode) {
+            foreach ([false, true] as $batch) {
+                $cases[] = [$mode, $batch];
+            }
+        }
+        return $cases;
+    }
+
+    #[DataProvider('authenticationCases')]
+    public function testAuthenticationHeader(string $mode, bool $batch): void
+    {
+        $stream = str_starts_with($mode, 'credentials') ? 'credentials' : 'token';
+        $builder = OpenObserveHandler::builder(self::$serverHost, 'auth', $stream);
+        $handler = match ($mode) {
+            'constructor' => new OpenObserveHandler(self::$serverHost, 'auth', $stream, 'opaque-token+/='),
+            'token' => $builder->withToken('opaque-token+/=')->build(),
+            'credentials' => $builder->withCredentials('user', 'p:a:ss')->build(),
+            'token-last' => $builder->withCredentials('wrong', 'credentials')->withToken('opaque-token+/=')->build(),
+            'credentials-last' => $builder->withToken('wrong')->withCredentials('user', 'p:a:ss')->build(),
+        };
+        $record = new LogRecord(new \DateTimeImmutable(), 'test', Level::Info, 'authentication');
+        if ($batch) {
+            $handler->handleBatch([$record, $record]);
+        } else {
+            $handler->handle($record);
+        }
+        // The server returns 401 unless the header matches exactly.
+        $this->addToAssertionCount(1);
+    }
+
+    public function testBuilderRequiresAuthentication(): void
+    {
+        $this->expectException(\LogicException::class);
+        OpenObserveHandler::builder(self::$serverHost, '200', 'stream')->build();
+    }
+
+    public static function invalidTokens(): array
+    {
+        return [[''], ["token\rheader"], ["token\nheader"]];
+    }
+
+    #[DataProvider('invalidTokens')]
+    public function testConstructorRejectsInvalidToken(string $token): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        new OpenObserveHandler(self::$serverHost, '200', 'stream', $token);
+    }
+
+    #[DataProvider('invalidTokens')]
+    public function testBuilderRejectsInvalidToken(string $token): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        OpenObserveHandler::builder(self::$serverHost, '200', 'stream')->withToken($token)->build();
+    }
+
+    public function testBuilderDefaultsAndIndependentHandlers(): void
+    {
+        $builder = OpenObserveHandler::builder(self::$serverHost, 'auth', 'token')->withToken('opaque-token+/=');
+        $first = $builder->build();
+        $this->assertEquals(new OpenObserveHandler(self::$serverHost, 'auth', 'token', 'opaque-token+/='), $first);
+        $this->assertNotSame($first, $builder->build());
+
+        $second = $builder->withToken('wrong')->withLevel(Level::Error)->withBubble(false)->build();
+        $this->assertSame(Level::Debug, $first->getLevel());
+        $this->assertTrue($first->getBubble());
+        $this->assertSame(Level::Error, $second->getLevel());
+        $this->assertFalse($second->getBubble());
+        (new Logger('test', [$first]))->info('original token still works');
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('HTTP 401');
+        (new Logger('test', [$second]))->error('new token fails');
+    }
+
+    public function testBuilderOptionsAndFallback(): void
+    {
+        $fallback = new TestHandler();
+        $logger = new Logger('fallback', [$fallback]);
+        $handler = OpenObserveHandler::builder(self::$serverHost, '401', 'stream')
+            ->withToken('token')
+            ->withIgnoreFailure(true)
+            ->withLevel('error')
+            ->withBubble(false)
+            ->withFallbackLogger($logger)
+            ->withConnectTimeout(0.25)
+            ->withTimeout(0.75)
+            ->build();
+        $this->assertEquals(new OpenObserveHandler(
+            self::$serverHost, '401', 'stream', 'token', true, Level::Error, false, $logger, 0.25, 0.75
+        ), $handler);
+        $log = new Logger('test', [$handler]);
+        $log->info('filtered');
+        $this->assertFalse($fallback->hasErrorRecords());
+        $log->error('reported');
+        $this->assertCount(1, $fallback->getRecords());
+        $this->assertStringContainsString('HTTP 401', $fallback->getRecords()[0]->message);
+    }
+
+    public function testTokenAgainstOpenObserve(): void
+    {
+        $host = $_ENV['O2_HOST'] ?? '';
+        $organizationId = $_ENV['O2_ORGANIZATION_ID'] ?? '';
+        $streamName = $_ENV['O2_STREAM_NAME'] ?? '';
+        $token = $_ENV['O2_TOKEN'] ?? '';
+        if (empty($host) || empty($organizationId) || empty($streamName) || empty($token)) {
+            $this->markTestSkipped('OpenObserve token environment variables are not set.');
+        }
+        $handler = new OpenObserveHandler($host, $organizationId, $streamName, $token);
+        (new Logger('test', [$handler]))->info('Token authentication integration test');
+        $this->addToAssertionCount(1);
+    }
+
     public function testSparseBatchFormatterProducesJsonArray(): void
     {
         $record = new LogRecord(new \DateTimeImmutable(), 'test', Level::Error, 'error');
@@ -136,7 +249,7 @@ class OpenObserveTest extends TestCase
     public function testFilteredBatchSendsJsonArray(): void
     {
         $handler = new OpenObserveHandler(
-            self::$serverHost, 'batch', 'stream', 'user', 'pass', level: Level::Error
+            self::$serverHost, 'batch', 'stream', 'dXNlcjpwYXNz', level: Level::Error
         );
         $handler->handleBatch([
             new LogRecord(new \DateTimeImmutable(), 'test', Level::Debug, 'skip'),
@@ -157,7 +270,7 @@ class OpenObserveTest extends TestCase
     #[DataProvider('ingestionFailures')]
     public function testIngestionFailureThrowsDespiteHttpSuccess(string $scenario): void
     {
-        $handler = new OpenObserveHandler(self::$serverHost, $scenario, 'stream', 'user', 'pass');
+        $handler = new OpenObserveHandler(self::$serverHost, $scenario, 'stream', 'dXNlcjpwYXNz');
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('failed to ingest');
 
@@ -168,7 +281,7 @@ class OpenObserveTest extends TestCase
     {
         $fallback = new TestHandler();
         $handler = new OpenObserveHandler(
-            self::$serverHost, 'partial', 'stream', 'user', 'pass',
+            self::$serverHost, 'partial', 'stream', 'dXNlcjpwYXNz',
             ignoreFailure: true,
             fallbackLogger: new Logger('fallback', [$fallback])
         );
@@ -223,8 +336,7 @@ class OpenObserveTest extends TestCase
             self::$serverHost,
             '401',
             'stream',
-            'user',
-            'pass',
+            'dXNlcjpwYXNz',
             true,
             Level::Debug,
             true,
@@ -251,8 +363,7 @@ class OpenObserveTest extends TestCase
             self::$serverHost,
             '401',
             'stream',
-            'user',
-            'pass',
+            'dXNlcjpwYXNz',
             false,
             Level::Debug,
             true,
@@ -285,16 +396,18 @@ class OpenObserveTest extends TestCase
 
     public function testHandler(): void
     {
-        $host = $_ENV['O2_HOST'];
-        $organizationId = $_ENV['O2_ORGANIZATION_ID'];
-        $streamName = $_ENV['O2_STREAM_NAME'];
-        $username = $_ENV['O2_USERNAME'];
-        $password = $_ENV['O2_PASSWORD'];
+        $host = $_ENV['O2_HOST'] ?? '';
+        $organizationId = $_ENV['O2_ORGANIZATION_ID'] ?? '';
+        $streamName = $_ENV['O2_STREAM_NAME'] ?? '';
+        $username = $_ENV['O2_USERNAME'] ?? '';
+        $password = $_ENV['O2_PASSWORD'] ?? '';
         if (empty($host) || empty($organizationId) || empty($streamName) || empty($username) || empty($password)) {
             $this->markTestSkipped('OpenObserve environment variables are not set.');
         }
 
-        $handler = new OpenObserveHandler($host, $organizationId, $streamName, $username, $password);
+        $handler = OpenObserveHandler::builder($host, $organizationId, $streamName)
+            ->withCredentials($username, $password)
+            ->build();
 
         $message = $this->faker()->sentence();
 
@@ -309,11 +422,11 @@ class OpenObserveTest extends TestCase
 
     public function testIgnoreFailure(): void
     {
-        $host = $_ENV['O2_HOST'];
-        $organizationId = $_ENV['O2_ORGANIZATION_ID'];
-        $streamName = $_ENV['O2_STREAM_NAME'];
-        $username = $_ENV['O2_USERNAME'];
-        $password = $_ENV['O2_PASSWORD'];
+        $host = $_ENV['O2_HOST'] ?? '';
+        $organizationId = $_ENV['O2_ORGANIZATION_ID'] ?? '';
+        $streamName = $_ENV['O2_STREAM_NAME'] ?? '';
+        $username = $_ENV['O2_USERNAME'] ?? '';
+        $password = $_ENV['O2_PASSWORD'] ?? '';
         if (empty($host) || empty($organizationId) || empty($streamName) || empty($username) || empty($password)) {
             $this->markTestSkipped('OpenObserve environment variables are not set.');
         }
@@ -321,14 +434,14 @@ class OpenObserveTest extends TestCase
         $log = new Logger('test');
         $message = $this->faker()->sentence();
 
-        $handler = new OpenObserveHandler('http://invalid-host', 'invalid-org', 'invalid-stream', 'user', 'pass', true);
+        $handler = new OpenObserveHandler('http://invalid-host', 'invalid-org', 'invalid-stream', 'dXNlcjpwYXNz', true);
         
         $log->pushHandler($handler);
         $log->info($message, ['foo' => 'bar']);
 
         $log->popHandler();
 
-        $handler = new OpenObserveHandler('http://invalid-host', 'invalid-org', 'invalid-stream', 'user', 'pass', false);
+        $handler = new OpenObserveHandler('http://invalid-host', 'invalid-org', 'invalid-stream', 'dXNlcjpwYXNz', false);
         $log->pushHandler($handler);
 
         $this->expectException(\Exception::class);
@@ -337,7 +450,7 @@ class OpenObserveTest extends TestCase
     public function testTimeoutDoesNotRetryTheRequest(): void
     {
         $handler = new OpenObserveHandler(
-            self::$serverHost, 'slow', 'stream', 'user', 'pass', timeout: 0.5
+            self::$serverHost, 'slow', 'stream', 'dXNlcjpwYXNz', timeout: 0.5
         );
         $started = hrtime(true);
         try {
