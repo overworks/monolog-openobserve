@@ -5,10 +5,11 @@ namespace Minhyung\Monolog;
 use Monolog\Level;
 use Psr\Log\LoggerInterface;
 
-/** Mutable builder. The last authentication setting wins. */
+/** Mutable builder. Each build() creates an independent handler. */
 class OpenObserveHandlerBuilder
 {
-    private ?string $token = null;
+    private ?string $username = null;
+    private ?string $password = null;
     private bool $ignoreFailure = false;
     private int|string|Level $level = Level::Debug;
     private bool $bubble = true;
@@ -23,16 +24,11 @@ class OpenObserveHandlerBuilder
     ) {
     }
 
-    /** Accept the token without the Basic prefix; validation happens at build(). */
-    public function withToken(string $token): self
-    {
-        $this->token = $token;
-        return $this;
-    }
-
     public function withCredentials(string $username, string $password): self
     {
-        return $this->withToken(base64_encode("{$username}:{$password}"));
+        $this->username = $username;
+        $this->password = $password;
+        return $this;
     }
 
     public function withIgnoreFailure(bool $ignoreFailure): self
@@ -73,15 +69,16 @@ class OpenObserveHandlerBuilder
 
     public function build(): OpenObserveHandler
     {
-        if ($this->token === null) {
-            throw new \LogicException('Configure authentication with withToken() or withCredentials() before build().');
+        if ($this->username === null || $this->password === null) {
+            throw new \LogicException('Configure authentication with withCredentials() before build().');
         }
 
         return new OpenObserveHandler(
             host: $this->host,
             organizationId: $this->organizationId,
             streamName: $this->streamName,
-            token: $this->token,
+            username: $this->username,
+            password: $this->password,
             ignoreFailure: $this->ignoreFailure,
             level: $this->level,
             bubble: $this->bubble,

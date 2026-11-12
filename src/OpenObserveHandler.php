@@ -18,7 +18,8 @@ class OpenObserveHandler extends AbstractProcessingHandler
      * @param string $host The OpenObserve host URL.
      * @param string $organizationId The organization ID.
      * @param string $streamName The stream name.
-     * @param string $token The ingestion token, without the Basic prefix. Sent without encoding.
+     * @param string $username The username for authentication.
+     * @param string $password The password for authentication.
      * @param bool $ignoreFailure Whether to ignore failures when sending logs.
      * @param int|string|Level $level The minimum logging level at which this handler will be triggered.
      * @param bool $bubble Whether the messages that are handled can bubble up the stack or not.
@@ -33,7 +34,8 @@ class OpenObserveHandler extends AbstractProcessingHandler
         protected string $host,
         protected string $organizationId,
         protected string $streamName,
-        protected string $token,
+        protected string $username,
+        protected string $password,
         protected bool $ignoreFailure = false,
         int|string|Level $level = Level::Debug,
         bool $bubble = true,
@@ -41,10 +43,6 @@ class OpenObserveHandler extends AbstractProcessingHandler
         protected float $connectTimeout = 2.0,
         protected float $timeout = 5.0
     ) {
-        if ($token === '' || strpbrk($token, "\r\n") !== false) {
-            throw new \InvalidArgumentException('The ingestion token must be non-empty and must not contain CR or LF.');
-        }
-
         if (!\extension_loaded('curl')) {
             throw new MissingExtensionException('The curl extension is needed to use the OpenObserveHandler');
         }
@@ -116,7 +114,7 @@ class OpenObserveHandler extends AbstractProcessingHandler
             curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
             curl_setopt($ch, CURLOPT_HTTPHEADER, [
                 'Content-Type: application/json',
-                'Authorization: Basic ' . $this->token,
+                'Authorization: Basic ' . base64_encode("{$this->username}:{$this->password}"),
             ]);
             // The whole-second CURLOPT_TIMEOUT / CURLOPT_CONNECTTIMEOUT would floor
             // a fractional value, so use the millisecond variants to honour it.

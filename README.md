@@ -30,7 +30,8 @@ $handler = new OpenObserveHandler(
 	host: 'http://localhost:5080',
 	organizationId: 'default',
 	streamName: 'monolog',
-	token: 'your-ingest-token',
+	username: 'admin@yourdomain.com',
+	password: 'yourpassword',
 );
 
 $logger = new Logger('app');
@@ -39,13 +40,9 @@ $logger->pushHandler($handler);
 $logger->info('Hello OpenObserve!', ['foo' => 'bar']);
 ```
 
-The token is the value after `Basic ` in OpenObserve's ingestion Authorization
-header. Pass it without that prefix. The handler sends it unchanged, without
-base64-encoding it again.
+### Builder
 
-### Builder and username/password authentication
-
-Use the builder to authenticate with a username and password:
+The builder offers the same options as fluent methods:
 
 ```php
 $handler = OpenObserveHandler::builder('http://localhost:5080', 'default', 'monolog')
@@ -55,33 +52,21 @@ $handler = OpenObserveHandler::builder('http://localhost:5080', 'default', 'mono
     ->build();
 ```
 
-Tokens are also supported by the builder:
+The builder is mutable: each `with...()` call returns the same builder, and each
+`build()` creates an independent handler. `withCredentials()` must be called
+before building, otherwise `build()` throws `LogicException`.
 
-```php
-$handler = OpenObserveHandler::builder('http://localhost:5080', 'default', 'monolog')
-    ->withToken('your-ingest-token')
-    ->withIgnoreFailure(true)
-    ->build();
-```
+All optional constructor arguments have matching builder methods:
+`withIgnoreFailure()`, `withLevel()`, `withBubble()`, `withFallbackLogger()`,
+`withConnectTimeout()`, and `withTimeout()`. Defaults are identical to the
+constructor: failures throw, level is Debug, bubbling is enabled, there is no
+fallback logger, and connection and request timeouts are 2 and 5 seconds.
 
-The builder is mutable: each `with...()` call returns the same builder, and the
-last `withToken()` or `withCredentials()` call determines authentication.
-Each `build()` creates an independent handler. Authentication must be configured
-before building, otherwise `build()` throws `LogicException`. Empty tokens and
-tokens containing CR or LF cause `InvalidArgumentException` at construction or
-build time.
-
-All constructor options have matching builder methods: `withIgnoreFailure()`,
-`withLevel()`, `withBubble()`, `withFallbackLogger()`, `withConnectTimeout()`, and
-`withTimeout()`. Defaults are identical to the constructor: failures throw,
-level is Debug, bubbling is enabled, there is no fallback logger, and connection
-and request timeouts are 2 and 5 seconds.
-
-**Migration:** The constructor's former `username` and `password` arguments have
-been replaced by a single `token` argument. Replace existing credentials-based
-constructor calls with `OpenObserveHandler::builder($host, $organizationId,
-$streamName)->withCredentials($username, $password)->build()`, transferring
-optional arguments to their matching builder methods.
+**Upgrading from 0.4.0:** That release replaced the constructor's `username` and
+`password` arguments with a single `token` argument and added `withToken()` to
+the builder. Both have been removed, so constructor calls written for 0.3.x work
+again. Code that passed a token should pass the username and password instead;
+an OpenObserve ingestion token is the base64 encoding of `username:password`.
 
 ## Handling failures
 
@@ -96,7 +81,8 @@ $handler = new OpenObserveHandler(
 	host: 'http://localhost:5080',
 	organizationId: 'default',
 	streamName: 'monolog',
-	token: 'your-ingest-token',
+	username: 'admin@yourdomain.com',
+	password: 'yourpassword',
 	ignoreFailure: true,
 );
 ```
@@ -112,7 +98,8 @@ $handler = new OpenObserveHandler(
 	host: 'http://localhost:5080',
 	organizationId: 'default',
 	streamName: 'monolog',
-	token: 'your-ingest-token',
+	username: 'admin@yourdomain.com',
+	password: 'yourpassword',
 	ignoreFailure: true,
 	fallbackLogger: new Logger('openobserve', [new ErrorLogHandler()]),
 );
@@ -134,7 +121,8 @@ $handler = new OpenObserveHandler(
 	host: 'http://localhost:5080',
 	organizationId: 'default',
 	streamName: 'monolog',
-	token: 'your-ingest-token',
+	username: 'admin@yourdomain.com',
+	password: 'yourpassword',
 	connectTimeout: 2.0,
 	timeout: 5.0,
 );

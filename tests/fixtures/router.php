@@ -12,10 +12,7 @@ $status = isset($segments[1]) && ctype_digit($segments[1]) ? (int) $segments[1] 
 
 $scenario = $segments[1] ?? '';
 if ($scenario === 'auth') {
-    $expectedToken = $segments[2] === 'credentials'
-        ? base64_encode('user:p:a:ss')
-        : 'opaque-token+/=';
-    if (($_SERVER['HTTP_AUTHORIZATION'] ?? '') !== 'Basic ' . $expectedToken) {
+    if (($_SERVER['HTTP_AUTHORIZATION'] ?? '') !== 'Basic ' . base64_encode('user:p:a:ss')) {
         $status = 401;
     }
 }
