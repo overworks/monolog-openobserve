@@ -62,24 +62,6 @@ All optional constructor arguments have matching builder methods:
 is Debug, bubbling is enabled, and connection and request timeouts are 2 and 5
 seconds.
 
-**Upgrading from 0.4.0:** That release replaced the constructor's `username` and
-`password` arguments with a single `token` argument and added `withToken()` to
-the builder. Both have been removed, so constructor calls written for 0.3.x work
-again. Code that passed a token should pass the username and password instead;
-an OpenObserve ingestion token is the base64 encoding of `username:password`.
-
-The `fallbackLogger` argument and `withFallbackLogger()` have been removed in
-favour of passing a closure as `ignoreFailure`, described under
-[Handling failures](#handling-failures). Replace `ignoreFailure: true,
-fallbackLogger: $logger` with:
-
-```php
-ignoreFailure: fn (\Throwable $e) => $logger->error($e->getMessage(), ['exception' => $e]),
-```
-
-Positional callers should note that `connectTimeout` and `timeout` moved up one
-position, to ninth and tenth.
-
 ## Handling failures
 
 By default the handler throws when OpenObserve cannot be reached or rejects the
@@ -163,3 +145,8 @@ $handler = new OpenObserveHandler(
 Each log or batch is sent once, without automatic retries, so retries do not
 multiply the configured timeout. A timeout does not guarantee that the server
 has not already ingested the records; retrying may create duplicates.
+
+## Upgrading
+
+0.5 changes the constructor arguments and failure handling. See
+[CHANGELOG.md](CHANGELOG.md) for the steps from 0.4 and from 0.3.
