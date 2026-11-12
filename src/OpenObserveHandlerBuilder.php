@@ -3,17 +3,15 @@
 namespace Minhyung\Monolog;
 
 use Monolog\Level;
-use Psr\Log\LoggerInterface;
 
 /** Mutable builder. Each build() creates an independent handler. */
 class OpenObserveHandlerBuilder
 {
     private ?string $username = null;
     private ?string $password = null;
-    private bool $ignoreFailure = false;
+    private bool|\Closure $ignoreFailure = false;
     private int|string|Level $level = Level::Debug;
     private bool $bubble = true;
-    private ?LoggerInterface $fallbackLogger = null;
     private float $connectTimeout = 2.0;
     private float $timeout = 5.0;
 
@@ -31,7 +29,10 @@ class OpenObserveHandlerBuilder
         return $this;
     }
 
-    public function withIgnoreFailure(bool $ignoreFailure): self
+    /**
+     * @param bool|\Closure(\Throwable, list<\Monolog\LogRecord>): void $ignoreFailure
+     */
+    public function withIgnoreFailure(bool|\Closure $ignoreFailure): self
     {
         $this->ignoreFailure = $ignoreFailure;
         return $this;
@@ -46,12 +47,6 @@ class OpenObserveHandlerBuilder
     public function withBubble(bool $bubble): self
     {
         $this->bubble = $bubble;
-        return $this;
-    }
-
-    public function withFallbackLogger(?LoggerInterface $fallbackLogger): self
-    {
-        $this->fallbackLogger = $fallbackLogger;
         return $this;
     }
 
@@ -82,7 +77,6 @@ class OpenObserveHandlerBuilder
             ignoreFailure: $this->ignoreFailure,
             level: $this->level,
             bubble: $this->bubble,
-            fallbackLogger: $this->fallbackLogger,
             connectTimeout: $this->connectTimeout,
             timeout: $this->timeout,
         );

@@ -8,7 +8,6 @@ use Monolog\Handler\Curl\Util as CurlUtil;
 use Monolog\Handler\MissingExtensionException;
 use Monolog\Level;
 use Monolog\LogRecord;
-use Psr\Log\LoggerInterface;
 
 class OpenObserveHandler extends AbstractProcessingHandler
 {
@@ -20,12 +19,13 @@ class OpenObserveHandler extends AbstractProcessingHandler
      * @param string $streamName The stream name.
      * @param string $username The username for authentication.
      * @param string $password The password for authentication.
-     * @param bool $ignoreFailure Whether to ignore failures when sending logs.
+     * @param bool|\Closure(\Throwable, list<LogRecord>): void $ignoreFailure What to do when sending fails.
+     *        false rethrows the exception and true swallows it. A Closure is called instead of throwing,
+     *        with the exception and the records that could not be sent, so they can be reported or passed
+     *        on to another handler. It must not log back to this handler, as that would recurse. Anything
+     *        it throws propagates to the caller.
      * @param int|string|Level $level The minimum logging level at which this handler will be triggered.
      * @param bool $bubble Whether the messages that are handled can bubble up the stack or not.
-     * @param LoggerInterface|null $fallbackLogger Where to report failures that $ignoreFailure swallows.
-     *                                             Must not be a logger that writes back to this handler,
-     *                                             as that would recurse. Defaults to reporting nowhere.
      * @param float $connectTimeout Seconds to wait for the connection to OpenObserve before giving up.
      * @param float $timeout Seconds to allow for the whole request before giving up. Keeps a stalled
      *                       OpenObserve from blocking the application indefinitely. 0 disables the limit.
@@ -36,10 +36,9 @@ class OpenObserveHandler extends AbstractProcessingHandler
         protected string $streamName,
         protected string $username,
         protected string $password,
-        protected bool $ignoreFailure = false,
+        protected bool|\Closure $ignoreFailure = false,
         int|string|Level $level = Level::Debug,
         bool $bubble = true,
-        protected ?LoggerInterface $fallbackLogger = null,
         protected float $connectTimeout = 2.0,
         protected float $timeout = 5.0
     ) {
@@ -74,7 +73,7 @@ class OpenObserveHandler extends AbstractProcessingHandler
 
         $formattedRecords = $this->getFormatter()->formatBatch($records);
 
-        $this->send($formattedRecords);
+        $this->send($formattedRecords, array_values($records));
     }
 
     /**
@@ -82,7 +81,7 @@ class OpenObserveHandler extends AbstractProcessingHandler
      */
     protected function write(LogRecord $record): void
     {
-        $this->send($record->formatted);
+        $this->send($record->formatted, [$record]);
     }
 
     /**
@@ -99,10 +98,12 @@ class OpenObserveHandler extends AbstractProcessingHandler
      * Sends the payload to OpenObserve.
      * 
      * @param string $payload The JSON payload to send.
+     * @param list<LogRecord> $records The records the payload was built from, handed to the
+     *                                 ignoreFailure closure if sending fails.
      * @return void
      * @throws \RuntimeException If the request fails or is rejected and ignoreFailure is false.
      */
-    protected function send(string $payload): void
+    protected function send(string $payload, array $records): void
     {
         try {
             $url = rtrim($this->host, '/') . "/api/{$this->organizationId}/{$this->streamName}/_json";
@@ -143,16 +144,15 @@ class OpenObserveHandler extends AbstractProcessingHandler
                 }
             }
         } catch (\Exception $e) {
-            if (! $this->ignoreFailure) {
+            if ($this->ignoreFailure === false) {
                 throw $e;
             }
 
             // The failure is being swallowed on purpose, but a caller that wants
-            // to know about it can supply somewhere to report it.
-            $this->fallbackLogger?->error(
-                'Failed to send log to OpenObserve: ' . $e->getMessage(),
-                ['exception' => $e]
-            );
+            // to know about it can supply a closure to receive it.
+            if ($this->ignoreFailure instanceof \Closure) {
+                ($this->ignoreFailure)($e, $records);
+            }
         }
     }
 }

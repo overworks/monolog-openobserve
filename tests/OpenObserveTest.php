@@ -176,28 +176,29 @@ class OpenObserveTest extends TestCase
         (new Logger('test', [$second]))->error('new credentials fail');
     }
 
-    public function testBuilderOptionsAndFallback(): void
+    public function testBuilderOptions(): void
     {
-        $fallback = new TestHandler();
-        $logger = new Logger('fallback', [$fallback]);
+        $failures = [];
+        $onFailure = function (\Throwable $e, array $records) use (&$failures): void {
+            $failures[] = [$e, $records];
+        };
         $handler = OpenObserveHandler::builder(self::$serverHost, '401', 'stream')
             ->withCredentials('user', 'pass')
-            ->withIgnoreFailure(true)
+            ->withIgnoreFailure($onFailure)
             ->withLevel('error')
             ->withBubble(false)
-            ->withFallbackLogger($logger)
             ->withConnectTimeout(0.25)
             ->withTimeout(0.75)
             ->build();
         $this->assertEquals(new OpenObserveHandler(
-            self::$serverHost, '401', 'stream', 'user', 'pass', true, Level::Error, false, $logger, 0.25, 0.75
+            self::$serverHost, '401', 'stream', 'user', 'pass', $onFailure, Level::Error, false, 0.25, 0.75
         ), $handler);
         $log = new Logger('test', [$handler]);
         $log->info('filtered');
-        $this->assertFalse($fallback->hasErrorRecords());
+        $this->assertCount(0, $failures);
         $log->error('reported');
-        $this->assertCount(1, $fallback->getRecords());
-        $this->assertStringContainsString('HTTP 401', $fallback->getRecords()[0]->message);
+        $this->assertCount(1, $failures);
+        $this->assertStringContainsString('HTTP 401', $failures[0][0]->getMessage());
     }
 
     public function testSparseBatchFormatterProducesJsonArray(): void
@@ -242,21 +243,81 @@ class OpenObserveTest extends TestCase
         (new Logger('test', [$handler]))->error('rejected record');
     }
 
-    public function testIgnoredIngestionFailureIsReportedToFallback(): void
+    public function testIgnoredIngestionFailureIsPassedToClosure(): void
     {
-        $fallback = new TestHandler();
+        $failures = [];
         $handler = new OpenObserveHandler(
             self::$serverHost, 'partial', 'stream', 'user', 'pass',
-            ignoreFailure: true,
-            fallbackLogger: new Logger('fallback', [$fallback])
+            ignoreFailure: function (\Throwable $e, array $records) use (&$failures): void {
+                $failures[] = [$e, $records];
+            }
         );
         (new Logger('test', [$handler]))->error('rejected record');
 
-        $records = $fallback->getRecords();
+        $this->assertCount(1, $failures);
+        [$exception, $records] = $failures[0];
+        $this->assertInstanceOf(\RuntimeException::class, $exception);
+        $this->assertStringContainsString('failed to ingest', $exception->getMessage());
         $this->assertCount(1, $records);
-        $this->assertSame(Level::Error, $records[0]->level);
-        $this->assertStringContainsString('failed to ingest', $records[0]->message);
-        $this->assertInstanceOf(\RuntimeException::class, $records[0]->context['exception']);
+        $this->assertInstanceOf(LogRecord::class, $records[0]);
+        $this->assertSame('rejected record', $records[0]->message);
+    }
+
+    public function testClosureIsNotCalledOnSuccess(): void
+    {
+        $called = false;
+        $handler = new OpenObserveHandler(
+            self::$serverHost, '200', 'stream', 'user', 'pass',
+            ignoreFailure: function () use (&$called): void {
+                $called = true;
+            }
+        );
+        (new Logger('test', [$handler]))->info('delivered');
+
+        $this->assertFalse($called);
+    }
+
+    /**
+     * The closure receives exactly the records the failed request carried: the
+     * ones that passed the level filter, as a list, after processors have run.
+     */
+    public function testFailedBatchRecordsAreForwardedToAnotherHandler(): void
+    {
+        $fallback = new TestHandler();
+        $handler = new OpenObserveHandler(
+            self::$serverHost, '500', 'stream', 'user', 'pass',
+            ignoreFailure: fn (\Throwable $e, array $records) => $fallback->handleBatch($records),
+            level: Level::Error
+        );
+        $handler->pushProcessor(function (LogRecord $record): LogRecord {
+            $record->extra['processed'] = true;
+            return $record;
+        });
+        $handler->handleBatch([
+            new LogRecord(new \DateTimeImmutable(), 'test', Level::Debug, 'skip'),
+            new LogRecord(new \DateTimeImmutable(), 'test', Level::Error, 'first error'),
+            new LogRecord(new \DateTimeImmutable(), 'test', Level::Info, 'skip too'),
+            new LogRecord(new \DateTimeImmutable(), 'test', Level::Error, 'second error'),
+        ]);
+
+        $records = $fallback->getRecords();
+        $this->assertSame([0, 1], array_keys($records));
+        $this->assertSame(['first error', 'second error'], array_column($records, 'message'));
+        $this->assertTrue($records[0]->extra['processed']);
+    }
+
+    public function testExceptionThrownByClosurePropagates(): void
+    {
+        $handler = new OpenObserveHandler(
+            self::$serverHost, '401', 'stream', 'user', 'pass',
+            ignoreFailure: function (\Throwable $e): never {
+                throw new \LogicException('rethrown by closure', 0, $e);
+            }
+        );
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('rethrown by closure');
+        (new Logger('test', [$handler]))->info('rejected');
     }
 
     public function testSuccessfulResponseDoesNotThrow(): void
@@ -290,64 +351,6 @@ class OpenObserveTest extends TestCase
         $log->info($this->faker()->sentence());
 
         $this->assertTrue(true);
-    }
-
-    public function testSwallowedFailureIsReportedToFallbackLogger(): void
-    {
-        $fallbackHandler = new TestHandler();
-        $fallbackLogger = new Logger('fallback', [$fallbackHandler]);
-
-        $handler = new OpenObserveHandler(
-            self::$serverHost,
-            '401',
-            'stream',
-            'user',
-            'pass',
-            true,
-            Level::Debug,
-            true,
-            $fallbackLogger
-        );
-
-        $log = new Logger('test');
-        $log->pushHandler($handler);
-        $log->info($this->faker()->sentence());
-
-        $this->assertTrue($fallbackHandler->hasErrorRecords());
-        $records = $fallbackHandler->getRecords();
-        $this->assertCount(1, $records);
-        $this->assertStringContainsString('HTTP 401', $records[0]['message']);
-        $this->assertInstanceOf(\RuntimeException::class, $records[0]['context']['exception']);
-    }
-
-    public function testFailureIsNotReportedToFallbackLoggerWhenRethrown(): void
-    {
-        $fallbackHandler = new TestHandler();
-        $fallbackLogger = new Logger('fallback', [$fallbackHandler]);
-
-        $handler = new OpenObserveHandler(
-            self::$serverHost,
-            '401',
-            'stream',
-            'user',
-            'pass',
-            false,
-            Level::Debug,
-            true,
-            $fallbackLogger
-        );
-
-        $log = new Logger('test');
-        $log->pushHandler($handler);
-
-        try {
-            $log->info($this->faker()->sentence());
-            $this->fail('Expected the handler to rethrow.');
-        } catch (\RuntimeException) {
-            // The caller sees the exception, so reporting it again would double up.
-        }
-
-        $this->assertFalse($fallbackHandler->hasErrorRecords());
     }
 
     public function testServerErrorResponseThrows(): void

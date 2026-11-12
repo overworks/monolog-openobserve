@@ -57,16 +57,28 @@ The builder is mutable: each `with...()` call returns the same builder, and each
 before building, otherwise `build()` throws `LogicException`.
 
 All optional constructor arguments have matching builder methods:
-`withIgnoreFailure()`, `withLevel()`, `withBubble()`, `withFallbackLogger()`,
-`withConnectTimeout()`, and `withTimeout()`. Defaults are identical to the
-constructor: failures throw, level is Debug, bubbling is enabled, there is no
-fallback logger, and connection and request timeouts are 2 and 5 seconds.
+`withIgnoreFailure()`, `withLevel()`, `withBubble()`, `withConnectTimeout()`, and
+`withTimeout()`. Defaults are identical to the constructor: failures throw, level
+is Debug, bubbling is enabled, and connection and request timeouts are 2 and 5
+seconds.
 
 **Upgrading from 0.4.0:** That release replaced the constructor's `username` and
 `password` arguments with a single `token` argument and added `withToken()` to
 the builder. Both have been removed, so constructor calls written for 0.3.x work
 again. Code that passed a token should pass the username and password instead;
 an OpenObserve ingestion token is the base64 encoding of `username:password`.
+
+The `fallbackLogger` argument and `withFallbackLogger()` have been removed in
+favour of passing a closure as `ignoreFailure`, described under
+[Handling failures](#handling-failures). Replace `ignoreFailure: true,
+fallbackLogger: $logger` with:
+
+```php
+ignoreFailure: fn (\Throwable $e) => $logger->error($e->getMessage(), ['exception' => $e]),
+```
+
+Positional callers should note that `connectTimeout` and `timeout` moved up one
+position, to ninth and tenth.
 
 ## Handling failures
 
@@ -87,12 +99,12 @@ $handler = new OpenObserveHandler(
 );
 ```
 
-Swallowed failures disappear silently. To keep a record of them, pass a
-`fallbackLogger` — any PSR-3 logger — and every ignored failure is reported to it
-at error level, with the original exception under the `exception` context key:
+Swallowed failures disappear silently. To act on them instead, pass a closure as
+`ignoreFailure`. It is called in place of throwing, with the exception and the
+log records that could not be sent:
 
 ```php
-use Monolog\Handler\ErrorLogHandler;
+use Monolog\LogRecord;
 
 $handler = new OpenObserveHandler(
 	host: 'http://localhost:5080',
@@ -100,14 +112,34 @@ $handler = new OpenObserveHandler(
 	streamName: 'monolog',
 	username: 'admin@yourdomain.com',
 	password: 'yourpassword',
-	ignoreFailure: true,
-	fallbackLogger: new Logger('openobserve', [new ErrorLogHandler()]),
+	ignoreFailure: function (\Throwable $e, array $records): void {
+		error_log('OpenObserve logging failed: ' . $e->getMessage());
+	},
 );
 ```
 
-The fallback logger must not write back to this handler, as that would recurse.
-It is only consulted while `ignoreFailure` is on; when the handler rethrows, the
-caller already sees the exception.
+`$records` is always a list of `LogRecord` objects — one for a single log call,
+or every record of a failed batch — so it can be handed straight to another
+handler to keep the logs that OpenObserve did not receive:
+
+```php
+use Monolog\Handler\StreamHandler;
+
+$file = new StreamHandler('/var/log/app/openobserve-failed.log');
+
+$handler = new OpenObserveHandler(
+	host: 'http://localhost:5080',
+	organizationId: 'default',
+	streamName: 'monolog',
+	username: 'admin@yourdomain.com',
+	password: 'yourpassword',
+	ignoreFailure: fn (\Throwable $e, array $records) => $file->handleBatch($records),
+);
+```
+
+The closure must not log back to this handler, as that would recurse. An
+exception thrown from the closure propagates to the caller, so it can also
+rethrow selectively.
 
 ## Timeouts
 
